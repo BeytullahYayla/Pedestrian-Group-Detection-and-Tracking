@@ -1,0 +1,8 @@
+path: C:/Users/MSI/Documents/GitHub/Pedestrian-Group-Detection-and-Tracking/dataset/MOT17/train/MOT17-09-DPM/yolo_dataset  # dataset root dir
+train: images/train  # train images (relative to 'path')
+val: images/val  # val images (relative to 'path')
+
+# Classes
+names:
+  0: pedestrian  # class name
+  
