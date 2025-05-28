@@ -65,15 +65,29 @@ def draw_bounding_boxes(image, yolo_data, img_width, img_height):
     return image_with_boxes
 
 def load_frame_data(frame_number):
-    # Load the frame's ground truth data
-    frame_gt_path = os.path.join(os.path.dirname(config.gt_mot_path), 'frame_gt_high_conf', f'frame_{frame_number:06d}.csv')
+    # Load the frame's ground truth data in YOLO format
+    frame_gt_path = os.path.join(config.gt_mot_path, f'{config.sequence_name}_frame{frame_number:06d}.txt')
     if os.path.exists(frame_gt_path):
-        return pd.read_csv(frame_gt_path)
+        # Read YOLO format labels
+        data = []
+        with open(frame_gt_path, 'r') as f:
+            for line in f:
+                class_id, x_center, y_center, width, height = map(float, line.strip().split())
+                data.append({
+                    'class': class_id,
+                    'x_center': x_center,
+                    'y_center': y_center,
+                    'width': width,
+                    'height': height,
+                    'conf': 1.0,  # YOLO format doesn't include confidence, so we set it to 1.0
+                    'id': 0  # YOLO format doesn't include track ID, so we set it to 0
+                })
+        return pd.DataFrame(data)
     return None
 
 def load_frame_image(frame_number):
     # Load the corresponding image
-    image_path = os.path.join(config.image_path, f'{frame_number:06d}.jpg')
+    image_path = os.path.join(config.image_path, f'{config.sequence_name}_frame{frame_number:06d}.jpg')
     if os.path.exists(image_path):
         return cv2.imread(image_path)
     return None
@@ -94,16 +108,16 @@ def save_yolo_format(frame_data, frame_number, img_width, img_height):
             f.write(f"{int(row['class'])} {row['x_center']:.6f} {row['y_center']:.6f} {row['width']:.6f} {row['height']:.6f}\n")
 
 def main():
-    st.title("YOLO Ground Truth Label Visualization (High Confidence)")
+    st.title("YOLO Ground Truth Label Visualization")
     
     # Get the list of available frames
-    frame_gt_dir = os.path.join(os.path.dirname(config.gt_mot_path), 'frame_gt_high_conf')
-    if not os.path.exists(frame_gt_dir):
-        st.error("High confidence ground truth directory not found!")
+    if not os.path.exists(config.image_path):
+        st.error("Image directory not found!")
         return
     
-    frame_files = [f for f in os.listdir(frame_gt_dir) if f.endswith('.csv')]
-    frame_numbers = [int(f.split('_')[1].split('.')[0]) for f in frame_files]
+    frame_files = [f for f in os.listdir(config.image_path) if f.endswith('.jpg')]
+    # Extract frame numbers from filenames like "MOT17-02-SDP_frame000001.jpg"
+    frame_numbers = [int(f.split('_frame')[1].split('.')[0]) for f in frame_files]
     frame_numbers.sort()
     
     # Initialize session state for current frame index if it doesn't exist
@@ -137,14 +151,8 @@ def main():
         # Load ground truth data
         frame_data = load_frame_data(selected_frame)
         if frame_data is not None:
-            # Convert to YOLO format
-            yolo_data = convert_to_yolo_format(frame_data, img_width, img_height)
-            
-            # Save YOLO format if not already saved
-            save_yolo_format(frame_data, selected_frame, img_width, img_height)
-            
             # Draw bounding boxes
-            image_with_boxes = draw_bounding_boxes(image, yolo_data, img_width, img_height)
+            image_with_boxes = draw_bounding_boxes(image, frame_data, img_width, img_height)
             
             # Display both original and annotated images side by side
             col1, col2 = st.columns(2)
@@ -158,23 +166,22 @@ def main():
             
             with tab1:
                 # Display YOLO format data
-                yolo_display = yolo_data[['class', 'x_center', 'y_center', 'width', 'height', 'conf']]
-                st.dataframe(yolo_display, use_container_width=True)
+                st.dataframe(frame_data, use_container_width=True)
             
             with tab2:
                 # Display statistics
                 st.subheader("Statistics")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Number of Objects", len(yolo_data))
+                    st.metric("Number of Objects", len(frame_data))
                 with col2:
-                    st.metric("Unique IDs", yolo_data['id'].nunique())
+                    st.metric("Unique Classes", frame_data['class'].nunique())
                 with col3:
-                    st.metric("Average Confidence", f"{yolo_data['conf'].mean():.2%}")
+                    st.metric("Average Confidence", f"{frame_data['conf'].mean():.2%}")
                 
                 # Class distribution
                 st.subheader("Class Distribution")
-                class_counts = yolo_data['class'].value_counts()
+                class_counts = frame_data['class'].value_counts()
                 st.bar_chart(class_counts)
         else:
             st.error(f"Ground truth data not found for frame {selected_frame}")
